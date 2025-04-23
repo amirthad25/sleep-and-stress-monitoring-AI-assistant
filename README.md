@@ -40,3 +40,27 @@ SereneMind is an intelligent wellness assistant that uses real-time voice and fa
 - Text-to-Speech (pyttsx3/gTTS)– Voice response
 - Streamlit / Flask – Frontend (optional)
 
+Install requirements
+pip install -r requirements.txt
+Configure Twilio
+Add your TWILIO_ACCOUNT_SID, AUTH_TOKEN, and PHONE_NUMBERS in config.py.
+
+Run the app
+python main.py
+
+📌 To-Do
+ Add mobile app integration
+ Improve emotion recognition accuracy
+ Enhance dashboard UI with Streamlit
+
+🤝 Contributing
+Pull requests are welcome! For major changes, please open an issue first to discuss your ideas.
+
+
+🙏 Acknowledgements
+OpenCV and TensorFlow communities
+Twilio for real-time SMS APIs
+TTS Libraries and contributors
+
+
+Let me know if you'd like me to help generate sample output screenshots or build a matching UI mockup 
