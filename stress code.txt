@@ -1,0 +1,157 @@
+import streamlit as st
+import whisper
+import sounddevice as sd
+import numpy as np
+import scipy.io.wavfile as wav
+import time
+import os
+import cv2
+import random
+from deepface import DeepFace
+from textblob import TextBlob
+from datetime import datetime
+import pygame
+from plyer import notification
+from twilio.rest import Client
+import pyttsx3
+
+# Twilio Credentials
+TWILIO_SID = "ACcbb156d81cb7c87e50ccf9101939809f"
+TWILIO_AUTH_TOKEN = "978d7bc167e57d28f0e94a052dc804fc"
+TWILIO_PHONE_NUMBER = "+19202899277r"
+USER_PHONE_NUMBER = "+916369311554"
+
+# Load Whisper model
+model = whisper.load_model("base")
+
+# Function to record audio
+def record_audio(filename="audio.wav", duration=5, fs=44100):
+    st.write("🎙️ Recording audio... Speak now!")
+    audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype=np.int16)
+    sd.wait()
+    wav.write(filename, fs, audio)
+    st.write("✅ Recording complete!")
+
+# Function to transcribe and analyze stress
+# Function to transcribe and analyze stress
+def analyze_speech():
+    result = model.transcribe("audio.wav", language="en")
+    transcribed_text = result["text"].strip()
+    blob = TextBlob(transcribed_text)
+    polarity = blob.sentiment.polarity
+
+    # Manual adjustment for extreme stress phrases
+    stress_keywords = ["stressed", "depressed", "anxious", "overwhelmed", "frustrated", "exhausted"]
+    if any(word in transcribed_text.lower() for word in stress_keywords):
+        polarity = -0.5  # Force it to be considered high stress
+
+    if polarity < -0.1:  # Adjusted threshold
+        stress_level = "High Stress 😟"
+        recommendations = [
+            "☕ Take short breaks every hour.",
+            "💬 Talk to a friend or family member.",
+            "🧘 Try 5 minutes of mindfulness meditation.",
+            "🎨 Engage in a hobby you enjoy.",
+            "🌿 Step outside and get some fresh air.",
+            "📅 Organize your tasks to reduce stress."
+        ]
+    elif -0.1 <= polarity < 0.3:
+        stress_level = "Moderate Stress 😐"
+        recommendations = [
+            "☕ Take short breaks every hour.",
+            "💬 Talk to a friend or family member.",
+            "🧘 Try 5 minutes of mindfulness meditation.",
+            "🎨 Engage in a hobby you enjoy.",
+            "🌿 Step outside and get some fresh air.",
+            "📅 Organize your tasks to reduce stress."
+        ]
+    else:
+        stress_level = "Low Stress 🙂"
+        recommendations = [
+            "☕ Take short breaks every hour.",
+            "💬 Talk to a friend or family member.",
+            "🧘 Try 5 minutes of mindfulness meditation.",
+            "🎨 Engage in a hobby you enjoy.",
+            "🌿 Step outside and get some fresh air.",
+            "📅 Organize your tasks to reduce stress."
+        ]
+
+    return transcribed_text, stress_level, random.sample(recommendations, 3)
+
+# Function for emotion detection
+def detect_faces_and_emotions(image_path):
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    image = cv2.imread(image_path)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    if len(faces) == 0:
+        return "No faces detected"
+    for (x, y, w, h) in faces:
+        face_crop = image[y:y+h, x:x+w]
+        result = DeepFace.analyze(face_crop, actions=['emotion'], detector_backend='opencv', enforce_detection=False)
+        return result[0]['dominant_emotion']
+
+# Function to play alarm and send notification
+def set_alarm(alarm_time):
+    while True:
+        now = datetime.now().strftime("%H:%M")
+        if now == alarm_time:
+            st.write("🔔 Time to sleep!")
+            pygame.init()
+            pygame.mixer.init()
+            pygame.mixer.music.load("alarm.wav")
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                time.sleep(1)
+            notification.notify(title="Sleep Reminder", message=f"🔔 It's {alarm_time}, time to sleep!", timeout=10)
+            send_sms(alarm_time)
+            break
+        time.sleep(10)
+
+# Function to send SMS via Twilio
+def send_sms(alarm_time):
+    try:
+        client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
+        message = client.messages.create(
+            body=f"🔔 Reminder: It's {alarm_time}! Time to sleep!",
+            from_=TWILIO_PHONE_NUMBER,
+            to=USER_PHONE_NUMBER
+        )
+        st.write("📩 SMS Sent!")
+    except Exception as e:
+        st.write(f"⚠️ SMS sending failed: {e}")
+
+# Function for Text-to-Speech
+def text_to_speech(text):
+    engine = pyttsx3.init()
+    engine.say(text)
+    engine.runAndWait()
+
+# Streamlit UI
+st.title("AI Stress & Sleep Assistant")
+
+if st.button("🎤 Start Recording & Analyze Stress"):
+    record_audio()
+    transcribed_text, stress_level, recommendations = analyze_speech()
+    st.write("📝 Transcribed Text:", transcribed_text)
+    st.write("📊 Stress Level:", stress_level)
+    
+    st.write("💡 Recommendations:")
+    for rec in recommendations:
+        st.write(f"- {rec}")
+    
+    text_to_speech(f"Your stress level is {stress_level}. Here are some recommendations: {', '.join(recommendations)}")
+
+uploaded_file = st.file_uploader("Upload an image for stress detection", type=["jpg", "png", "jpeg"])
+if uploaded_file is not None:
+    image_path = "uploaded_image.jpg"
+    with open(image_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    emotion = detect_faces_and_emotions(image_path)
+    st.write("🎭 Detected Emotion:", emotion)
+
+alarm_time = st.text_input("⏰ Enter Sleep Alarm Time (HH:MM)")
+if st.button("Set Alarm"):
+    set_alarm(alarm_time)
+
+st.success("✅ All features integrated successfully!")
