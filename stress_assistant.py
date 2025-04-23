@@ -14,9 +14,19 @@ import matplotlib.pyplot as plt
 import pyttsx3
 import pygame  # Import pygame for music playback
 from plyer import notification  # Import plyer for notifications
+from twilio.rest import Client  # Import Twilio client
 
 # Load Whisper model
 model = whisper.load_model("base")
+
+# Twilio account details (replace with your actual credentials)
+TWILIO_ACCOUNT_SID = 'your_twilio_account_sid'
+TWILIO_AUTH_TOKEN = 'your_twilio_auth_token'
+TWILIO_PHONE_NUMBER = 'your_twilio_phone_number'
+RECIPIENT_PHONE_NUMBER = 'recipient_phone_number'
+
+# Initialize Twilio client
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 st.title("AI Stress & Sleep Assistant")
 
@@ -25,6 +35,14 @@ def text_to_speech(text):
     engine = pyttsx3.init()
     engine.say(text)
     engine.runAndWait()
+
+# Send SMS via Twilio
+def send_sms(message):
+    client.messages.create(
+        body=message,
+        from_=TWILIO_PHONE_NUMBER,
+        to=RECIPIENT_PHONE_NUMBER
+    )
 
 # Initialize session state for stress trends
 if 'stress_trends' not in st.session_state:
@@ -151,6 +169,8 @@ if st.session_state.captured_emotion:
     st.write("💡 Recommendations:")
     for rec in random.sample(st.session_state.captured_recommendations, min(3, len(st.session_state.captured_recommendations))):
         st.write(f"- {rec}")
+    text_to_speech(f"Your stress level is {st.session_state.captured_stress}. Here are some recommendations: {', '.join(random.sample(st.session_state.captured_recommendations, min(3, len(st.session_state.captured_recommendations))))}")
+    send_sms(f"Your stress level is {st.session_state.captured_stress}. Here are some recommendations: {', '.join(random.sample(st.session_state.captured_recommendations, min(3, len(st.session_state.captured_recommendations))))}")
 
 # Breathing Exercise Guide with Real-Time Audio Instructions
 st.header("🧘 Breathing Exercise Guide")
@@ -195,3 +215,4 @@ if st.button("Set Alarm"):
     )
 
     st.write("🔔 Alarm triggered! Check your notifications.")
+st.write("🔔 Alarm triggered! Check your notifications.")
