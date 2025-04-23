@@ -14,14 +14,16 @@ import matplotlib.pyplot as plt
 import pyttsx3
 import pygame  # Import pygame for music playback
 from plyer import notification  # Import plyer for notifications
+import threading
 from twilio.rest import Client  # Import Twilio client
+from twilio.base.exceptions import TwilioRestException
 
 # Load Whisper model
 model = whisper.load_model("base")
 
 # Twilio account details (replace with your actual credentials)
-TWILIO_ACCOUNT_SID = 'your_twilio_account_sid'
-TWILIO_AUTH_TOKEN = 'your_twilio_auth_token'
+TWILIO_ACCOUNT_SID = 'your_actual_twilio_account_sid'
+TWILIO_AUTH_TOKEN = 'your_actual_twilio_auth_token'
 TWILIO_PHONE_NUMBER = 'your_twilio_phone_number'
 RECIPIENT_PHONE_NUMBER = 'recipient_phone_number'
 
@@ -36,18 +38,33 @@ def text_to_speech(text):
     engine.say(text)
     engine.runAndWait()
 
+# Function to run text-to-speech in a separate thread
+def run_text_to_speech(text):
+    threading.Thread(target=text_to_speech, args=(text,)).start()
+
 # Send SMS via Twilio
 def send_sms(message):
-    client.messages.create(
-        body=message,
-        from_=TWILIO_PHONE_NUMBER,
-        to=RECIPIENT_PHONE_NUMBER
-    )
+    try:
+        message = client.messages.create(
+            body=message,
+            from_=TWILIO_PHONE_NUMBER,
+            to=RECIPIENT_PHONE_NUMBER
+        )
+        st.success(f"Message sent successfully! SID: {message.sid}")
+    except TwilioRestException as e:
+        st.error(f"Error sending message: {e}")
 
 # Initialize session state for stress trends
 if 'stress_trends' not in st.session_state:
     st.session_state.stress_trends = []
 if 'analysis_completed' not in st.session_state:
+    st.session_state.analysis_completed = False
+
+# Reset session state for emotion analysis
+def reset_emotion_analysis():
+    st.session_state.captured_emotion = None
+    st.session_state.captured_stress = None
+    st.session_state.captured_recommendations = []
     st.session_state.analysis_completed = False
 
 def plot_stress_trends():
@@ -64,6 +81,8 @@ def plot_stress_trends():
 
 st.header("🎤 Speech-to-Text Analysis")
 if st.button("Start Recording & Analyze Stress"):
+    reset_emotion_analysis()  # Reset emotion analysis state
+
     def record_audio(filename="audio.wav", duration=5, fs=44100):
         st.write("🎙️ Recording audio... Speak now!")
         audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype=np.int16)
@@ -107,7 +126,7 @@ if st.button("Start Recording & Analyze Stress"):
     st.write("💡 Recommendations:")
     for rec in recommendations:
         st.write(f"- {rec}")
-    text_to_speech(f"Your stress level is {stress_level}. Here are some recommendations: {', '.join(recommendations)}")
+    run_text_to_speech(f"Your stress level is {stress_level}. Here are some recommendations: {', '.join(recommendations)}")
 
 # Show the chart button only if analysis is completed
 if st.session_state.analysis_completed:
@@ -145,6 +164,7 @@ if st.button("Start Camera"):
     st.session_state.cap = cv2.VideoCapture(0)
 
 if st.button("Stop Camera"):
+    reset_emotion_analysis()  # Reset emotion analysis state
     st.session_state.camera_active = False
     if 'cap' in st.session_state and st.session_state.cap is not None:
         st.session_state.cap.release()
@@ -169,50 +189,64 @@ if st.session_state.captured_emotion:
     st.write("💡 Recommendations:")
     for rec in random.sample(st.session_state.captured_recommendations, min(3, len(st.session_state.captured_recommendations))):
         st.write(f"- {rec}")
-    text_to_speech(f"Your stress level is {st.session_state.captured_stress}. Here are some recommendations: {', '.join(random.sample(st.session_state.captured_recommendations, min(3, len(st.session_state.captured_recommendations))))}")
-    send_sms(f"Your stress level is {st.session_state.captured_stress}. Here are some recommendations: {', '.join(random.sample(st.session_state.captured_recommendations, min(3, len(st.session_state.captured_recommendations))))}")
+    run_text_to_speech(f"Your stress level is {st.session_state.captured_stress}. Here are some recommendations: {', '.join(random.sample(st.session_state.captured_recommendations, min(3, len(st.session_state.captured_recommendations))))}")
 
 # Breathing Exercise Guide with Real-Time Audio Instructions
 st.header("🧘 Breathing Exercise Guide")
 if st.button("Start Breathing Exercise"):
+    reset_emotion_analysis()  # Reset emotion analysis state
     st.write("Let's begin a simple breathing exercise to help you relax.")
     for i in range(5):
-        text_to_speech(f"Breathe in deeply for 4 seconds... {i+1}/5")
+        run_text_to_speech(f"Breathe in deeply for 4 seconds... {i+1}/5")
         st.write(f"Breathe in deeply for 4 seconds... {i+1}/5")
         time.sleep(4)
-        text_to_speech("Hold your breath for 2 seconds...")
+        run_text_to_speech("Hold your breath for 2 seconds...")
         st.write("Hold your breath for 2 seconds...")
         time.sleep(2)
-        text_to_speech("Exhale slowly for 6 seconds...")
+        run_text_to_speech("Exhale slowly for 6 seconds...")
         st.write("Exhale slowly for 6 seconds...")
         time.sleep(6)
     st.success("Breathing exercise completed!")
-    text_to_speech("Breathing exercise completed!")
+    run_text_to_speech("Breathing exercise completed!")
 
 # Updated Sleep Reminder Section
 st.header("⏰ Sleep Reminder")
 alarm_time = st.text_input("Enter Sleep Alarm Time (HH:MM)")
 
 if st.button("Set Alarm"):
+    reset_emotion_analysis()  # Reset emotion analysis state
     st.write(f"🔔 Alarm set for {alarm_time}")
-    current_time = datetime.now().strftime("%H:%M")
 
-    # Wait until the alarm time is reached
-    while current_time != alarm_time:
-        time.sleep(1)
+    # Check if alarm.wav file exists
+    if not os.path.exists("alarm.wav"):
+        st.error("alarm.wav file not found. Please ensure the file is in the correct directory.")
+    else:
         current_time = datetime.now().strftime("%H:%M")
 
-    # Play alarm sound
-    pygame.mixer.init()
-    pygame.mixer.music.load("alarm.wav")  # Ensure you have an alarm.wav file in your directory
-    pygame.mixer.music.play()
+        # Wait until the alarm time is reached
+        while current_time != alarm_time:
+            time.sleep(1)
+            current_time = datetime.now().strftime("%H:%M")
 
-    # Send pop-up notification
-    notification.notify(
-        title="Sleep Reminder",
-        message="It's time to sleep!",
-        timeout=10  # Notification stays for 10 seconds
-    )
+        # Play alarm sound
+        pygame.mixer.init()
+        pygame.mixer.music.load("alarm.wav")
+        pygame.mixer.music.play()
 
-    st.write("🔔 Alarm triggered! Check your notifications.")
-st.write("🔔 Alarm triggered! Check your notifications.")
+        # Send pop-up notification
+        notification.notify(
+            title="Sleep Reminder",
+            message="It's time to sleep!",
+            timeout=10  # Notification stays for 10 seconds
+        )
+
+        # Send SMS via Twilio
+        send_sms("It's time to sleep!")
+
+        st.write("🔔 Alarm triggered! Check your notifications.")
+
+
+
+
+
+NOTE: UPDATE THE TWILIO CREDENTIALS CREATE ACCOUNT ,SIGN UP AND GENERATE THE CREDENTIALS AND REPLACE THEM IN THE CODE IN 25 TO 28 LINE
